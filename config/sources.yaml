@@ -1,0 +1,16 @@
+# RSS/Atom sources are opt-in. Review each source's terms before enabling it.
+feeds:
+  - name: Example University Research Feed
+    url: https://example.edu/research/feed.xml
+    enabled: false
+    weight: 3
+    language: en
+    category: university_research
+    type: research_feed
+  - name: Example Japanese Institute
+    url: https://example.jp/mental-health-ai/atom.xml
+    enabled: false
+    weight: 4
+    language: ja
+    category: research_institute
+    type: technical_report

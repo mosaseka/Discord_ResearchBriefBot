@@ -1,0 +1,10 @@
+{
+  "message": {
+    "DOI": "10.5555/example.1",
+    "title": ["Example paper"],
+    "type": "journal-article",
+    "container-title": ["Example Journal"],
+    "URL": "https://doi.org/10.5555/example.1",
+    "published": {"date-parts": [[2026, 9, 1]]}
+  }
+}

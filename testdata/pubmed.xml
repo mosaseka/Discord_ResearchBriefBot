@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PubmedArticleSet>
+  <PubmedArticle>
+    <MedlineCitation>
+      <PMID>40000001</PMID>
+      <Article>
+        <Journal><JournalIssue><PubDate><Year>2026</Year><Month>Sep</Month><Day>02</Day></PubDate></JournalIssue><Title>Journal of Digital Mental Health</Title></Journal>
+        <ArticleTitle>Contextual Bandits for Just-in-Time Mental Health Interventions</ArticleTitle>
+        <Abstract><AbstractText Label="METHODS">We conducted a randomized controlled trial of a contextual bandit for mental health intervention timing with N=240 participants.</AbstractText><AbstractText Label="RESULTS">The adaptive intervention improved adherence compared with fixed timing.</AbstractText></Abstract>
+        <PublicationTypeList><PublicationType>Randomized Controlled Trial</PublicationType><PublicationType>Journal Article</PublicationType></PublicationTypeList>
+        <ArticleDate><Year>2026</Year><Month>09</Month><Day>02</Day></ArticleDate>
+      </Article>
+    </MedlineCitation>
+    <PubmedData><ArticleIdList><ArticleId IdType="pubmed">40000001</ArticleId><ArticleId IdType="doi">10.5555/jitai.2026.1</ArticleId></ArticleIdList></PubmedData>
+  </PubmedArticle>
+  <PubmedArticle>
+    <MedlineCitation>
+      <PMID>40000002</PMID>
+      <Article>
+        <Journal><JournalIssue><PubDate><Year>2026</Year><Month>Aug</Month><Day>31</Day></PubDate></JournalIssue><Title>Psychiatry Technology Review</Title></Journal>
+        <ArticleTitle>Artificial Intelligence Agents for Psychotherapy: A Systematic Review</ArticleTitle>
+        <Abstract><AbstractText>We conducted a systematic review of conversational agent systems for psychotherapy and mental health care. We compare human evaluation and clinician validation methods. The review identifies inconsistent safety reporting.</AbstractText></Abstract>
+        <PublicationTypeList><PublicationType>Systematic Review</PublicationType><PublicationType>Journal Article</PublicationType></PublicationTypeList>
+      </Article>
+    </MedlineCitation>
+    <PubmedData><ArticleIdList><ArticleId IdType="pubmed">40000002</ArticleId><ArticleId IdType="doi">10.5555/review.2026.2</ArticleId></ArticleIdList></PubmedData>
+  </PubmedArticle>
+  <PubmedArticle>
+    <MedlineCitation>
+      <PMID>40000003</PMID>
+      <Article>
+        <Journal><JournalIssue><PubDate><Year>2026</Year><Month>Aug</Month><Day>18</Day></PubDate></JournalIssue><Title>Computational Psychiatry</Title></Journal>
+        <ArticleTitle>Offline Reinforcement Learning for Personalized Anxiety Interventions</ArticleTitle>
+        <Abstract><AbstractText>We evaluate offline reinforcement learning on a retrospective clinical dataset from 180 patients with anxiety. The method uses longitudinal histories to personalize intervention choices. Results outperform a supervised baseline in off-policy evaluation.</AbstractText></Abstract>
+        <PublicationTypeList><PublicationType>Journal Article</PublicationType></PublicationTypeList>
+      </Article>
+    </MedlineCitation>
+    <PubmedData><ArticleIdList><ArticleId IdType="pubmed">40000003</ArticleId><ArticleId IdType="doi">10.5555/offline.2026.3</ArticleId></ArticleIdList></PubmedData>
+  </PubmedArticle>
+</PubmedArticleSet>

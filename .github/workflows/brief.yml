@@ -1,0 +1,42 @@
+name: Weekly research brief
+
+on:
+  schedule:
+    # 18:00 JST on Friday. GitHub schedules use UTC and may start late.
+    - cron: "0 9 * * 5"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: discord-research-brief
+  cancel-in-progress: false
+
+jobs:
+  brief:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+      DISCORD_CHANNEL_ID: ${{ secrets.DISCORD_CHANNEL_ID }}
+      APP_TIMEZONE: Asia/Tokyo
+      DATABASE_PATH: data/researchbot.db
+      NCBI_TOOL: discord-research-brief-bot
+      NCBI_EMAIL: ${{ vars.NCBI_EMAIL }}
+      CROSSREF_MAILTO: ${{ vars.CROSSREF_MAILTO }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Restore notification history
+        uses: actions/cache@v4
+        with:
+          path: data/
+          key: researchbot-db-${{ github.run_id }}
+          restore-keys: |
+            researchbot-db-
+      - name: Collect and post
+        run: go run ./cmd/researchbot --once

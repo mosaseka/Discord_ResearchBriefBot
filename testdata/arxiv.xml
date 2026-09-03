@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:arxiv="http://arxiv.org/schemas/atom">
+  <entry>
+    <id>http://arxiv.org/abs/2609.00001v1</id>
+    <updated>2026-09-02T12:00:00Z</updated>
+    <published>2026-09-02T12:00:00Z</published>
+    <title>Contextual Bandits for Just-in-Time Mental Health Interventions</title>
+    <summary>We propose a contextual bandit for personalized mental health intervention timing. We evaluate the method with 120 participants and a patient simulation benchmark. Results show improved cumulative reward over fixed timing.</summary>
+    <author><name>Ada Example</name></author>
+    <arxiv:doi>10.5555/jitai.2026.1</arxiv:doi>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2608.00002v2</id>
+    <updated>2026-08-22T08:00:00Z</updated>
+    <published>2026-08-20T08:00:00Z</published>
+    <title>Safety-Constrained Reinforcement Learning with a Depression Patient Simulator</title>
+    <summary>We develop constrained reinforcement learning for depression intervention selection. The method is evaluated in a validated patient simulator. Results show fewer simulated unsafe actions than an unconstrained baseline.</summary>
+    <author><name>Grace Example</name></author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2608.00003v1</id>
+    <updated>2026-08-30T10:00:00Z</updated>
+    <published>2026-08-30T10:00:00Z</published>
+    <title>A Multi-Agent Safety Supervisor for Mental-Health Conversations</title>
+    <summary>We propose a multi-agent system that separates mental health state estimation, intervention selection, and safety supervision. Expert evaluation compares the agents on a benchmark of crisis scenarios. The safety supervisor detects more unsafe responses.</summary>
+    <author><name>Lin Example</name></author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2609.99999v1</id>
+    <updated>2026-09-03T10:00:00Z</updated>
+    <published>2026-09-03T10:00:00Z</published>
+    <title>Reinforcement Learning for Warehouse Routing</title>
+    <summary>We study reinforcement learning for generic warehouse optimization. Results improve route length.</summary>
+    <author><name>Unrelated Author</name></author>
+  </entry>
+</feed>
