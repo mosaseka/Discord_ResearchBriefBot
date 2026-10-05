@@ -49,3 +49,43 @@ func TestPostCancellation(t *testing.T) {
 		t.Fatalf("expected cancellation, got %v", err)
 	}
 }
+
+func TestDeliveryAmbiguity(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"success", nil, false},
+		{"rejected", &HTTPError{Status: 403}, false},
+		{"rate limited", &HTTPError{Status: 429}, false},
+		{"server error", &HTTPError{Status: 503}, true},
+		{"request timeout", &HTTPError{Status: 408}, true},
+		{"canceled", context.Canceled, true},
+		{"deadline", context.DeadlineExceeded, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := IsAmbiguous(tc.err); got != tc.want {
+				t.Fatalf("ambiguous=%v want=%v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestAmbiguousAttemptFollowedByRejection(t *testing.T) {
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls == 1 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer server.Close()
+	_, err := NewForTest("fixture-token", server.URL, server.Client()).Post(context.Background(), "123", Payload{Content: "fixture"})
+	var rejection *HTTPError
+	if !errors.As(err, &rejection) || rejection.Status != http.StatusForbidden || !IsAmbiguous(err) || calls != 2 {
+		t.Fatalf("earlier ambiguous attempt was lost: calls=%d err=%v", calls, err)
+	}
+}

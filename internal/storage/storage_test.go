@@ -119,3 +119,114 @@ func TestBusyFailureLeavesDatabaseUsable(t *testing.T) {
 		t.Fatalf("database did not recover after busy error: %v", err)
 	}
 }
+
+func TestRetryableReservationPreservesFailedBatch(t *testing.T) {
+	ctx := context.Background()
+	store, err := Open(ctx, ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	stamp := time.Date(2026, 10, 5, 9, 0, 0, 0, time.UTC)
+	item := article.Item{Title: "retryable study", PublishedAt: stamp, UpdatedAt: stamp}
+	run1, _ := store.BeginRun(ctx, "test")
+	first, err := store.Reserve(ctx, run1, "123", "rejected", []article.Item{item})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = store.MarkFailed(ctx, first.ID, false, errors.New("Discord returned HTTP 403")); err != nil {
+		t.Fatal(err)
+	}
+	seen, err := store.AlreadyNotified(ctx, "123", item)
+	if err != nil || seen {
+		t.Fatalf("definite rejection should be available: seen=%v err=%v", seen, err)
+	}
+	run2, _ := store.BeginRun(ctx, "test")
+	second, err := store.Reserve(ctx, run2, "123", "retry", []article.Item{item})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var state, lastError string
+	if err = store.db.QueryRowContext(ctx, "SELECT state,last_error FROM delivery_batches WHERE id=?", first.ID).Scan(&state, &lastError); err != nil || state != "failed" || lastError != "Discord returned HTTP 403" {
+		t.Fatalf("previous failure audit changed: state=%s error=%s err=%v", state, lastError, err)
+	}
+	if err = store.MarkSent(ctx, second.ID, "message"); err != nil {
+		t.Fatal(err)
+	}
+	seen, err = store.AlreadyNotified(ctx, "123", item)
+	if err != nil || !seen {
+		t.Fatalf("successful retry was not suppressed: seen=%v err=%v", seen, err)
+	}
+}
+
+func TestAmbiguousAndLegacyFailuresRemainSuppressed(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		ambiguous bool
+		cause     error
+	}{
+		{"unknown", true, errors.New("Discord returned HTTP 403")},
+		{"legacy canceled", false, context.Canceled},
+		{"legacy deadline", false, context.DeadlineExceeded},
+		{"legacy server error", false, errors.New("Discord returned HTTP 503")},
+		{"request timeout", false, errors.New("Discord returned HTTP 408")},
+		{"missing error", false, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			store, err := Open(ctx, ":memory:")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer store.Close()
+			item := article.Item{Title: "uncertain study"}
+			run1, _ := store.BeginRun(ctx, "test")
+			reservation, err := store.Reserve(ctx, run1, "123", "first", []article.Item{item})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = store.MarkFailed(ctx, reservation.ID, tc.ambiguous, tc.cause); err != nil {
+				t.Fatal(err)
+			}
+			seen, err := store.AlreadyNotified(ctx, "123", item)
+			if err != nil || !seen {
+				t.Fatalf("uncertain outcome not suppressed: seen=%v err=%v", seen, err)
+			}
+			run2, _ := store.BeginRun(ctx, "test")
+			if _, err = store.Reserve(ctx, run2, "123", "second", []article.Item{item}); !errors.Is(err, ErrAlreadyReserved) {
+				t.Fatalf("uncertain outcome re-reserved: %v", err)
+			}
+		})
+	}
+}
+
+func TestRetryReservationRollbackOnLaterConflict(t *testing.T) {
+	ctx := context.Background()
+	store, err := Open(ctx, ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	item := article.Item{Title: "retry rollback study"}
+	run1, _ := store.BeginRun(ctx, "test")
+	first, err := store.Reserve(ctx, run1, "123", "original", []article.Item{item})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = store.MarkFailed(ctx, first.ID, false, errors.New("Discord returned HTTP 401")); err != nil {
+		t.Fatal(err)
+	}
+	run2, _ := store.BeginRun(ctx, "test")
+	if _, err = store.Reserve(ctx, run2, "123", "duplicate-in-batch", []article.Item{item, item}); !errors.Is(err, ErrAlreadyReserved) {
+		t.Fatalf("expected duplicate conflict: %v", err)
+	}
+	var batchID int64
+	var state string
+	if err = store.db.QueryRowContext(ctx, "SELECT batch_id,state FROM deliveries").Scan(&batchID, &state); err != nil || batchID != first.ID || state != "failed" {
+		t.Fatalf("failed retry was not rolled back: batch=%d state=%s err=%v", batchID, state, err)
+	}
+	var count int
+	if err = store.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM delivery_batches").Scan(&count); err != nil || count != 1 {
+		t.Fatalf("rolled-back batch was retained: count=%d err=%v", count, err)
+	}
+}

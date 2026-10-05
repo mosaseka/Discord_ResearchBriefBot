@@ -25,11 +25,39 @@ func (f *fakeSource) Collect(context.Context, time.Time, time.Time) ([]article.I
 	return append([]article.Item(nil), f.items...), f.err
 }
 
-type fakePublisher struct{ calls int }
+type fakePublisher struct {
+	calls int
+	err   error
+}
 
 func (f *fakePublisher) Post(context.Context, string, discord.Payload) (string, error) {
 	f.calls++
+	if f.err != nil {
+		return "", f.err
+	}
 	return "message", nil
+}
+
+func TestRetryAfterDefiniteDiscordRejection(t *testing.T) {
+	now := time.Date(2026, 10, 5, 9, 0, 0, 0, time.UTC)
+	source := &fakeSource{items: []article.Item{makeItem("contextual bandit for mental health", now)}}
+	publisher := &fakePublisher{err: &discord.HTTPError{Status: 403}}
+	service := &Service{Sources: toSources(source), Store: openStore(t), Publisher: publisher, ChannelID: "123", Now: func() time.Time { return now }}
+	if _, err := service.Run(context.Background(), false); err == nil {
+		t.Fatal("expected rejected Discord request")
+	}
+	publisher.err = nil
+	retried, err := service.Run(context.Background(), false)
+	if err != nil {
+		t.Fatalf("retry after restoring Discord permissions: %v", err)
+	}
+	if retried.Posted != 1 || publisher.calls != 2 {
+		t.Fatalf("posted=%d publisher calls=%d", retried.Posted, publisher.calls)
+	}
+	third, err := service.Run(context.Background(), false)
+	if err != nil || third.Selected != 0 {
+		t.Fatalf("successfully retried item was selected again: selected=%d err=%v", third.Selected, err)
+	}
 }
 
 func makeItem(title string, published time.Time) article.Item {

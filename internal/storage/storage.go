@@ -22,6 +22,15 @@ import (
 
 var ErrAlreadyReserved = errors.New("one or more items are already reserved or delivered")
 
+// Old versions also recorded canceled or timed-out requests as failed. Only
+// explicit Discord 4xx rejections are safe to retry, not those legacy rows.
+// A 408 response remains ambiguous because processing may have started.
+const retryableDeliverySQL = `deliveries.state='failed' AND EXISTS (
+    SELECT 1 FROM delivery_batches b WHERE b.id=deliveries.batch_id
+    AND b.state='failed' AND b.last_error GLOB 'Discord returned HTTP 4[0-9][0-9]'
+    AND b.last_error<>'Discord returned HTTP 408'
+)`
+
 type Store struct {
 	db   *sql.DB
 	path string
@@ -185,7 +194,7 @@ func (s *Store) Record(ctx context.Context, items []ranking.Ranked, selected map
 
 func (s *Store) AlreadyNotified(ctx context.Context, channel string, item article.Item) (bool, error) {
 	var exists int
-	err := s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM deliveries WHERE channel_key=? AND identity=? AND revision=? AND state IN ('sending','sent','unknown'))`, channelKey(channel), item.Identity(), item.Revision()).Scan(&exists)
+	err := s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM deliveries WHERE channel_key=? AND identity=? AND revision=? AND NOT (`+retryableDeliverySQL+`))`, channelKey(channel), item.Identity(), item.Revision()).Scan(&exists)
 	return exists == 1, err
 }
 
@@ -210,11 +219,14 @@ func (s *Store) Reserve(ctx context.Context, runID, channel, nonce string, items
 		return Reservation{}, err
 	}
 	for _, item := range items {
-		r, insertErr := tx.ExecContext(ctx, `INSERT INTO deliveries(batch_id,run_id,channel_key,identity,revision,title,state) VALUES(?,?,?,?,?,?,'sending') ON CONFLICT(channel_key,identity,revision) DO NOTHING`, id, runID, key, item.Identity(), item.Revision(), item.Title)
+		r, insertErr := tx.ExecContext(ctx, `INSERT INTO deliveries(batch_id,run_id,channel_key,identity,revision,title,state) VALUES(?,?,?,?,?,?,'sending') ON CONFLICT(channel_key,identity,revision) DO UPDATE SET batch_id=excluded.batch_id,run_id=excluded.run_id,title=excluded.title,state='sending',notified_at=NULL WHERE `+retryableDeliverySQL, id, runID, key, item.Identity(), item.Revision(), item.Title)
 		if insertErr != nil {
 			return Reservation{}, insertErr
 		}
-		affected, _ := r.RowsAffected()
+		affected, err := r.RowsAffected()
+		if err != nil {
+			return Reservation{}, fmt.Errorf("check delivery reservation: %w", err)
+		}
 		if affected != 1 {
 			return Reservation{}, ErrAlreadyReserved
 		}

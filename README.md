@@ -119,10 +119,12 @@ cron parserは`*`、数値、range、list、stepを扱い、day-of-weekは0ま�
 
 ## GitHub Actionsで無料運用
 
-[.github/workflows/brief.yml](.github/workflows/brief.yml) はpublic repositoryのGitHub-hosted runnerで金曜09:00 UTC（18:00 JST）に `go run ./cmd/researchbot --once` を実行し、`workflow_dispatch`にも対応します。repository Secretsへ次を設定してください。
+[.github/workflows/brief.yml](.github/workflows/brief.yml) はpublic repositoryのGitHub-hosted runnerで金曜09:00 UTC（18:00 JST）に `go run ./cmd/researchbot --once` を実行し、`workflow_dispatch`にも対応します。**定期実行は既定で無効です。** GitHubで運用する場合だけ、repository Variablesの `ENABLE_GITHUB_SCHEDULE` を `true` にし、repository Secretsへ次を設定してください。
 
 - `DISCORD_BOT_TOKEN`
 - `DISCORD_CHANNEL_ID`
+
+Windows Task Schedulerまたはsystemdで運用する場合は `ENABLE_GITHUB_SCHEDULE` を設定しないでください。GitHub側のschedule jobはskipされ、未設定Secretsによる失敗メールと二重投稿を防ぎます。手動の `workflow_dispatch` はこの変数に関係なく実行されるため、GitHubで投稿するSecretsが必要です。
 
 任意の連絡先はSecretsではなくrepository Variables `NCBI_EMAIL`、`CROSSREF_MAILTO`に設定できます。OpenAI等のAPI secretは不要です。SQLite通知履歴は`actions/cache`へ引き継ぎますが、cacheの保持期限・eviction・失敗したjobでは更新されない点に注意してください。cacheが消えた場合は過去30日内の文献が再通知される可能性があります。GitHub Actionsのscheduled workflowは負荷状況により開始が遅れることがあります。
 
@@ -158,6 +160,8 @@ Discordは公式REST API v10を使い、429の`retry_after`と5xxをbounded retr
 ## 永続化
 
 SQLiteにはrun history、source/window別の取得成否と件数、title・URL・source・publication/update date・DOI・arXiv ID・PMID、score、selected flag、delivery state、message ID、通知日時を保存します。abstractや記事本文は保存しません。各設定feedは独立collectorとして失敗を隔離します。migrationは埋込みSQLをchecksum検証し、transactionでappend-only適用します。
+
+Discordが明確に拒否したHTTP 4xx（408以外）の `failed` 予約は、次回実行でtransaction内に再予約します。以前の失敗batchとerrorは残ります。`sending`、`sent`、`unknown` は再予約しません。timeout、cancel、5xx、途中に曖昧な送信を含む失敗は再投稿を避けるため `unknown` として扱います。旧版の `failed` でも明確なHTTP拒否を確認できないものは再予約しません。復旧時にSQLite DBを削除する必要はありません。
 
 ## Test
 

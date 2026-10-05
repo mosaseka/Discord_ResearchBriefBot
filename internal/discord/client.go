@@ -33,6 +33,13 @@ type HTTPError struct{ Status int }
 
 func (e *HTTPError) Error() string { return fmt.Sprintf("Discord returned HTTP %d", e.Status) }
 
+type ambiguousPostError struct{ cause error }
+
+func (e *ambiguousPostError) Error() string {
+	return "Discord delivery outcome is unknown: " + e.cause.Error()
+}
+func (e *ambiguousPostError) Unwrap() error { return e.cause }
+
 func New(token string) *Client {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.Proxy = nil
@@ -43,7 +50,13 @@ func NewForTest(token, endpoint string, h *http.Client) *Client {
 	return &Client{token: token, endpoint: strings.TrimRight(endpoint, "/"), http: h, attempts: 4}
 }
 
-func (c *Client) Post(ctx context.Context, channel string, payload Payload) (string, error) {
+func (c *Client) Post(ctx context.Context, channel string, payload Payload) (messageID string, postErr error) {
+	ambiguousAttempt := false
+	defer func() {
+		if postErr != nil && ambiguousAttempt {
+			postErr = &ambiguousPostError{cause: postErr}
+		}
+	}()
 	if c == nil || c.http == nil || strings.TrimSpace(c.token) == "" {
 		return "", errors.New("Discord client is not configured")
 	}
@@ -67,8 +80,12 @@ func (c *Client) Post(ctx context.Context, channel string, payload Payload) (str
 		req.Header.Set("User-Agent", "DiscordResearchBriefBot/1.0")
 		resp, err := c.http.Do(req)
 		if err != nil {
+			ambiguousAttempt = true
 			last = fmt.Errorf("send Discord message: %w", err)
 		} else {
+			if resp.StatusCode >= 500 || resp.StatusCode == http.StatusRequestTimeout {
+				ambiguousAttempt = true
+			}
 			body, readErr := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 			resp.Body.Close()
 			if readErr != nil {
@@ -117,11 +134,18 @@ func Nonce(channel, date, runID string, index int) string {
 	return hex.EncodeToString(sum[:12])
 }
 func IsAmbiguous(err error) bool {
+	if err == nil {
+		return false
+	}
+	var ambiguousErr *ambiguousPostError
+	if errors.As(err, &ambiguousErr) {
+		return true
+	}
 	var httpErr *HTTPError
 	if errors.As(err, &httpErr) {
-		return httpErr.Status >= 500
+		return httpErr.Status >= 500 || httpErr.Status == http.StatusRequestTimeout
 	}
-	return !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded)
+	return true
 }
 func sleep(ctx context.Context, d time.Duration) error {
 	timer := time.NewTimer(d)
