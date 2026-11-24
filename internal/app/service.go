@@ -13,6 +13,7 @@ import (
 	"github.com/mosaseka/Discord_ResearchBriefBot/internal/discord"
 	"github.com/mosaseka/Discord_ResearchBriefBot/internal/ranking"
 	"github.com/mosaseka/Discord_ResearchBriefBot/internal/storage"
+	"github.com/mosaseka/Discord_ResearchBriefBot/internal/summarizer"
 )
 
 const MaxItems = 5
@@ -20,15 +21,21 @@ const MaxItems = 5
 type Publisher interface {
 	Post(context.Context, string, discord.Payload) (string, error)
 }
+
+type Summarizer interface {
+	Summarize(context.Context, article.Item) (summarizer.Generated, error)
+}
+
 type Service struct {
-	Sources   []collector.Source
-	Crossref  *crossref.Client
-	Store     *storage.Store
-	Publisher Publisher
-	ChannelID string
-	Location  *time.Location
-	Logger    *slog.Logger
-	Now       func() time.Time
+	Sources    []collector.Source
+	Crossref   *crossref.Client
+	Store      *storage.Store
+	Publisher  Publisher
+	Summarizer Summarizer
+	ChannelID  string
+	Location   *time.Location
+	Logger     *slog.Logger
+	Now        func() time.Time
 }
 type Result struct {
 	RunID                                string
@@ -134,17 +141,18 @@ func (s *Service) Run(ctx context.Context, dryRun bool, requestedType ...string)
 	if err = s.Store.Record(ctx, ranked, selected); err != nil {
 		return result, err
 	}
+	briefItems := s.summarize(ctx, available)
 	date := now.Format("2006-01-02")
-	result.Markdown = discord.FormatMarkdown(date, result.ScopeDays, available)
+	payloads, err := discord.Build(date, result.ScopeDays, briefItems)
+	if err != nil {
+		return result, err
+	}
+	result.Markdown = discord.FormatMarkdown(payloads)
 	if dryRun {
 		return result, nil
 	}
 	if s.Publisher == nil {
 		return result, errors.New("Discord publisher is required")
-	}
-	payloads, err := discord.Build(date, result.ScopeDays, available)
-	if err != nil {
-		return result, err
 	}
 	offset := 0
 	for index, payload := range payloads {
@@ -172,6 +180,27 @@ func (s *Service) Run(ctx context.Context, dryRun bool, requestedType ...string)
 		result.Posted += count
 	}
 	return result, nil
+}
+
+func (s *Service) summarize(ctx context.Context, items []ranking.Ranked) []discord.BriefItem {
+	briefItems := make([]discord.BriefItem, 0, len(items))
+	failures := 0
+	for _, item := range items {
+		briefItem := discord.BriefItem{Ranked: item}
+		if s.Summarizer != nil && ctx.Err() == nil {
+			generated, err := s.Summarizer.Summarize(ctx, item.Item)
+			if err != nil {
+				failures++
+			} else {
+				briefItem.Generated = &generated
+			}
+		}
+		briefItems = append(briefItems, briefItem)
+	}
+	if failures > 0 {
+		s.Logger.Warn("Gemini summaries fell back to extraction", "items", failures)
+	}
+	return briefItems
 }
 
 func (s *Service) collect(ctx context.Context, since, until time.Time, runID string, windowDays int) ([]article.Item, bool, error) {

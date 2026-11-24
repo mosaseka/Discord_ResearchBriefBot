@@ -10,6 +10,7 @@ import (
 
 	"github.com/mosaseka/Discord_ResearchBriefBot/internal/ranking"
 	"github.com/mosaseka/Discord_ResearchBriefBot/internal/security"
+	"github.com/mosaseka/Discord_ResearchBriefBot/internal/summarizer"
 	"github.com/mosaseka/Discord_ResearchBriefBot/internal/textutil"
 )
 
@@ -54,7 +55,12 @@ type Payload struct {
 	EnforceNonce    bool            `json:"enforce_nonce,omitempty"`
 }
 
-func Build(date string, scopeDays int, items []ranking.Ranked) ([]Payload, error) {
+type BriefItem struct {
+	ranking.Ranked
+	Generated *summarizer.Generated
+}
+
+func Build(date string, scopeDays int, items []BriefItem) ([]Payload, error) {
 	header := fmt.Sprintf("# 🧠 Mental-Health RL / Agent Brief\n%s\n\n探索範囲:\n直近7日のみ", date)
 	if scopeDays > 7 {
 		header = fmt.Sprintf("# 🧠 Mental-Health RL / Agent Brief\n%s\n\n探索範囲:\n直近7日では候補不足のため、直近30日まで拡張", date)
@@ -62,10 +68,34 @@ func Build(date string, scopeDays int, items []ranking.Ranked) ([]Payload, error
 	if len(items) == 0 {
 		header += "\n\n対象期間に通知可能な新規資料はありませんでした。"
 	}
-	header = textutil.SuppressMentions(textutil.Truncate(header, MaxMessageContent))
+	header = discordText(header, MaxMessageContent)
 	embeds := make([]Embed, 0, len(items))
 	for idx, item := range items {
-		e := Embed{Title: textutil.SuppressMentions(textutil.Truncate(fmt.Sprintf("%d. %s", idx+1, item.Item.Title), MaxEmbedTitle)), URL: safeURL(item.Item.URL), Description: textutil.SuppressMentions(textutil.Truncate(fmt.Sprintf("**公開:** %s\n**種別:** %s\n**Source:** %s", item.Item.PublishedAt.Format("2006-01-02"), item.Item.SourceType, item.Item.DisplaySource()), 700)), Color: 0x5865F2, Fields: []Field{{Name: "貢献", Value: textutil.SuppressMentions(textutil.Truncate(item.Contribution, MaxFieldValue))}, {Name: "エビデンス品質", Value: textutil.SuppressMentions(textutil.Truncate(item.Evidence.Reason, MaxFieldValue))}, {Name: "学部研究への意味", Value: textutil.SuppressMentions(textutil.Truncate(item.UndergraduateMeaning, MaxFieldValue))}}, Footer: &Footer{Text: fmt.Sprintf("deterministic score: %d (relevance %d / source %d / evidence %d / freshness %d / technical %d)", item.Breakdown.Total(), item.Breakdown.Relevance, item.Breakdown.SourceQuality, item.Breakdown.Evidence, item.Breakdown.Freshness, item.Breakdown.TechnicalRelevance)}}
+		method := "抽出型"
+		contribution := Field{Name: "貢献", Value: discordText(item.Contribution, MaxFieldValue)}
+		application := Field{Name: "学部研究への意味", Value: discordText(item.UndergraduateMeaning, MaxFieldValue)}
+		if item.Generated != nil {
+			method = "Gemini 生成"
+			contribution = Field{Name: "目的・方法・主な結果", Value: discordText(item.Generated.Findings, MaxFieldValue)}
+			application = Field{Name: "学部研究への応用案", Value: discordText(item.Generated.Application, MaxFieldValue)}
+		}
+		description := fmt.Sprintf("**公開:** %s\n**種別:** %s\n**要約方式:** %s", item.Item.PublishedAt.Format("2006-01-02"), item.Item.SourceType, method)
+		if item.Item.DOI != "" {
+			description += "\n**DOI:** " + textutil.Truncate(item.Item.DOI, 256)
+		}
+		description += "\n**Source:** " + item.Item.DisplaySource()
+		e := Embed{
+			Title:       discordText(fmt.Sprintf("%d. %s", idx+1, item.Item.Title), MaxEmbedTitle),
+			URL:         safeURL(item.Item.URL),
+			Description: discordText(description, 700),
+			Color:       0x5865F2,
+			Fields: []Field{
+				contribution,
+				{Name: "エビデンス品質", Value: discordText(item.Evidence.Reason, MaxFieldValue)},
+				application,
+			},
+			Footer: &Footer{Text: fmt.Sprintf("deterministic score: %d (relevance %d / source %d / evidence %d / freshness %d / technical %d)", item.Breakdown.Total(), item.Breakdown.Relevance, item.Breakdown.SourceQuality, item.Breakdown.Evidence, item.Breakdown.Freshness, item.Breakdown.TechnicalRelevance)},
+		}
 		if err := ValidateEmbed(e); err != nil {
 			return nil, err
 		}
@@ -125,7 +155,11 @@ func noMentions() AllowedMentions {
 	return AllowedMentions{Parse: []string{}, Users: []string{}, Roles: []string{}, RepliedUser: false}
 }
 
-func signalText(items []ranking.Ranked) string {
+func discordText(value string, limit int) string {
+	return textutil.Truncate(textutil.SuppressMentions(value), limit)
+}
+
+func signalText(items []BriefItem) string {
 	counts := map[string]int{}
 	for _, item := range items {
 		for _, topic := range item.Topics {
@@ -168,8 +202,7 @@ func safeURL(raw string) string {
 	return u.String()
 }
 
-func FormatMarkdown(date string, scopeDays int, items []ranking.Ranked) string {
-	payloads, _ := Build(date, scopeDays, items)
+func FormatMarkdown(payloads []Payload) string {
 	var b strings.Builder
 	for _, payload := range payloads {
 		if payload.Content != "" {

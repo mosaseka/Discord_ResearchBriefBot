@@ -2,9 +2,9 @@
 
 `Discord_ResearchBriefBot` は、reinforcement learning / agent systems と personalized mental-health care が直接交わる新着論文・技術資料を毎週最大5件選び、Discord Bot APIへ投稿するGoアプリケーションです。既定スケジュールは毎週金曜日18:00 JSTです。
 
-運用時にOpenAI、Anthropic、GeminiなどのLLM API、有料検索API、有料news API、Web UI自動操作は一切使いません。arXiv、NCBI E-utilities、Crossref、運用者が明示的に設定した公開RSS/AtomとDiscord公式REST APIだけを使用するため、Bot用インフラを除き完全無料で運用できます。一般記事ページとGoogle Scholarは取得しません。
+既定の運用ではarXiv、NCBI E-utilities、Crossref、設定済みの公開RSS/AtomとDiscord公式REST APIを使用します。一般記事ページとGoogle Scholarは取得しません。日本語の生成要約には、明示的に有効化した場合だけGemini Developer APIを使用します。
 
-このBotの要約はabstractから文を選ぶ抽出的要約です。evidence qualityと「学部研究への意味」は固定ルールです。ChatGPT等による文脈的・生成型評価より機械的であり、入力が同じなら結果も同じです。**このBotによるevidence qualityや研究上の重要性評価は、人間のsystematic reviewや専門家評価の代替ではありません。**
+既定では抄録から文を選んで要約し、固定テンプレートで学部研究への意味を示します。エビデンス品質とランキングはどちらの要約方式でも同じ決定論的なルールで計算します。**このBotによるエビデンス品質と研究上の重要性の評価は、人間のsystematic reviewや専門家評価の代替ではありません。**
 
 ## データソース
 
@@ -61,6 +61,16 @@ Discordにはlabelだけでなく、確認できたsource種別、study design�
 
 「学部研究への意味」はtopic順で最大2個の固定テンプレートを連結します。patient simulation、JITAI/intervention timing、offline RL、safe/constrained RL、longitudinal personalization、multi-agent、digital phenotyping等に対応します。これはBotのルールベース評価であり、著者の主張ではありません。
 
+### Geminiによる日本語要約
+
+`GEMINI_ENABLED=true` と `GEMINI_API_KEY` を環境変数に設定すると、通知履歴まで照合して確定した最大5件に対し、各1回だけ要約を要求します。取得済みのタイトル、抄録、書誌情報を資料として送り、資料内の指示を無視するよう指定します。検索・外部ツールの宣言を省略し、Interactionの保存を `store: false` で無効化します。
+
+Google公式のInteractions APIで `gemini-4-hydrogen` と推論レベル `low` を使用し、JSONスキーマに沿った出力を要求します。1件あたりの上限は12秒、リクエストとレスポンスは各64 KiB、抄録は8,000 UTF-16単位、モデル出力は4,096トークンです。[Gemini 4 Hydrogen](https://aistudio.google.com/docs/whats-new-gemini-4-hydrogen) · [推論設定](https://aistudio.google.com/docs/thinking) · [構造化出力](https://aistudio.google.com/docs/structured-output)
+
+Discord EmbedとMarkdownプレビューは同じ要約を使用します。生成時は「目的・方法・主な結果」と「学部研究への応用案」が表示されます。応用案は、資料に接点がある場合にJITAI、強化学習、タスクスケジューリングを取り上げます。研究デザイン、参加者数、効果量は抄録原文に一致する記載を引用し、それ以外は「抄録に記載なし」と表示します。元記事URL、DOI、公開日は取得済みデータから表示します。
+
+キー未設定、429、タイムアウト、空または不正な出力などの場合は、その項目を抽出型要約へ切り替えて処理を続けます。項目ごとに「要約方式」として「Gemini 生成」または「抽出型」を表示します。APIキー、送信資料、APIの生レスポンスはログに出力しません。Geminiの利用枠と課金条件はAPIプロジェクトの設定に従います。[Gemini APIの料金](https://aistudio.google.com/docs/pricing)
+
 ## セットアップ
 
 Go 1.25以上が必要です。SQLite driverはpure Goの`modernc.org/sqlite`で、CGOは不要です。
@@ -98,7 +108,7 @@ go run ./cmd/researchbot --once --dry-run --fixture ./testdata
 go run ./cmd/researchbot
 ```
 
-`--fixture` は `--once` を必須とし、自動的にdry-runになります。fixtureの基準時刻は `testdata/manifest.json` に固定されるため、実行日によらず同じ結果です。
+`--once --dry-run` は、Geminiを有効化していれば投稿前の生成要約を標準出力で確認できます。`--fixture` は `--once` を必須とし、自動的にdry-runになります。Geminiの設定にかかわらずネットワーク接続を行わず、`testdata/manifest.json` の基準時刻と抽出型要約を使います。
 
 ## 環境変数
 
@@ -106,6 +116,8 @@ go run ./cmd/researchbot
 |---|---:|---|
 | `DISCORD_BOT_TOKEN` | 投稿時 | 空。Discord Bot token |
 | `DISCORD_CHANNEL_ID` | 投稿時 | 空。投稿channel snowflake |
+| `GEMINI_ENABLED` | いいえ | `false`。`true` で日本語の生成要約を有効化 |
+| `GEMINI_API_KEY` | 生成要約時 | 空。Gemini Developer APIキー。空の場合は抽出型要約を使用 |
 | `APP_TIMEZONE` | いいえ | `Asia/Tokyo` |
 | `BRIEF_CRON` | いいえ | `0 18 * * 5`。秒なし5-field cron |
 | `NCBI_TOOL` | いいえ | `discord-research-brief-bot` |
@@ -117,7 +129,7 @@ go run ./cmd/researchbot
 
 cron parserは`*`、数値、range、list、stepを扱い、day-of-weekは0または7をSundayとして扱います。
 
-## GitHub Actionsで無料運用
+## GitHub Actionsで運用
 
 [.github/workflows/brief.yml](.github/workflows/brief.yml) はpublic repositoryのGitHub-hosted runnerで金曜09:00 UTC（18:00 JST）に `go run ./cmd/researchbot --once` を実行し、`workflow_dispatch`にも対応します。**定期実行は既定で無効です。** GitHubで運用する場合だけ、repository Variablesの `ENABLE_GITHUB_SCHEDULE` を `true` にし、repository Secretsへ次を設定してください。
 
@@ -126,7 +138,7 @@ cron parserは`*`、数値、range、list、stepを扱い、day-of-weekは0ま�
 
 Windows Task Schedulerまたはsystemdで運用する場合は `ENABLE_GITHUB_SCHEDULE` を設定しないでください。GitHub側のschedule jobはskipされ、未設定Secretsによる失敗メールと二重投稿を防ぎます。手動の `workflow_dispatch` はこの変数に関係なく実行されるため、GitHubで投稿するSecretsが必要です。
 
-任意の連絡先はSecretsではなくrepository Variables `NCBI_EMAIL`、`CROSSREF_MAILTO`に設定できます。OpenAI等のAPI secretは不要です。SQLite通知履歴は`actions/cache`へ引き継ぎますが、cacheの保持期限・eviction・失敗したjobでは更新されない点に注意してください。cacheが消えた場合は過去30日内の文献が再通知される可能性があります。GitHub Actionsのscheduled workflowは負荷状況により開始が遅れることがあります。
+Geminiを使う場合はrepository Variablesの `GEMINI_ENABLED` を `true` にし、repository Secretsに `GEMINI_API_KEY` を追加します。任意の連絡先はrepository Variables `NCBI_EMAIL`、`CROSSREF_MAILTO` に設定できます。SQLite通知履歴は`actions/cache`へ引き継ぎますが、cacheの保持期限・eviction・失敗したjobでは更新されない点に注意してください。cacheが消えた場合は過去30日内の文献が再通知される可能性があります。GitHub Actionsのscheduled workflowは負荷状況により開始が遅れることがあります。
 
 ## systemd
 
@@ -135,6 +147,8 @@ binaryを `/opt/discord-research-brief-bot/bin/discord-research-brief-bot` に�
 ```text
 DISCORD_BOT_TOKEN=
 DISCORD_CHANNEL_ID=
+GEMINI_ENABLED=false
+GEMINI_API_KEY=
 DATABASE_PATH=/var/lib/discord-research-brief-bot/researchbot.db
 APP_TIMEZONE=Asia/Tokyo
 BRIEF_CRON=0 18 * * 5
@@ -157,6 +171,8 @@ unitは`Restart=on-failure`、`NoNewPrivileges`、`ProtectSystem=strict`、priva
 
 Discordは公式REST API v10を使い、429の`retry_after`と5xxをbounded retryします。message content 2000、embed title 256、field 1024、1 messageのembed合計6000、embed最大10をUTF-16 unitで検証し、extended grapheme cluster境界で切ります。code fenceを無効化してから分割し、全payloadに空の`allowed_mentions`を付け、`@everyone`、`@here`、user/role mentionを無効化します。nonceとSQLite予約により曖昧な送信失敗時の安易な再送を防ぎます。
 
+Geminiへの送信先は公式の `https://generativelanguage.googleapis.com/v1beta/interactions` に固定し、キーは `X-Goog-Api-Key` ヘッダーで渡します。リダイレクトと再試行を無効化し、既存HTTPクライアントのDNS検証、レート制限、MIMEと本文サイズの検証を適用します。
+
 ## 永続化
 
 SQLiteにはrun history、source/window別の取得成否と件数、title・URL・source・publication/update date・DOI・arXiv ID・PMID、score、selected flag、delivery state、message ID、通知日時を保存します。abstractや記事本文は保存しません。各設定feedは独立collectorとして失敗を隔離します。migrationは埋込みSQLをchecksum検証し、transactionでappend-only適用します。
@@ -165,7 +181,7 @@ Discordが明確に拒否したHTTP 4xx（408以外）の `failed` 予約は、�
 
 ## Test
 
-全testはfixture、fake、`httptest`だけを使い、実arXiv、PubMed、Crossref、RSS、Discord、DNSへ接続しません。
+全testはfixture、fake、`httptest`だけを使い、実arXiv、PubMed、Crossref、RSS、Gemini、Discord、DNSへ接続しません。
 
 ```powershell
 $goFiles = @(rg --files -g '*.go')
@@ -184,7 +200,7 @@ git diff --check
 
 ## 既知の制約
 
-- LLM、全文翻訳、意味理解は行わず、keyword/cueに現れない関係を拾えません。否定表現も完全には解釈できません。
+- ランキングと抽出型要約はkeyword/cueに依存し、否定表現を完全には解釈できません。Geminiによる生成要約は実行ごとに変わり得ます。
 - abstract/metadataだけを使うため、本文にしかないstudy limitation、risk of bias、数値は評価しません。
 - PubMed publication typeまたはCrossrefの`journal-article`等を査読済みのproxyとして扱います。個々のvenueの査読方針までは自動検証しません。
 - PubMedで日が提供されない月単位publication dateは月初として扱うため、境界付近で保守的に除外される場合があります。
