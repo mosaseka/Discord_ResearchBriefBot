@@ -169,12 +169,17 @@ func (c *Client) fetchOnce(ctx context.Context, u *url.URL, accept string, allow
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, false, 0, fmt.Errorf("%w: %s returned %d", ErrStatus, endpointLabel(u), resp.StatusCode)
 	}
+	body, err := readResponse(resp, allowed, max)
+	return body, false, 0, err
+}
+
+func readResponse(resp *http.Response, allowed []string, max int64) ([]byte, error) {
 	if resp.ContentLength > max {
-		return nil, false, 0, ErrTooLarge
+		return nil, ErrTooLarge
 	}
 	mediaType, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
 	if err != nil {
-		return nil, false, 0, fmt.Errorf("%w: %v", ErrInvalidMIME, err)
+		return nil, fmt.Errorf("%w: %v", ErrInvalidMIME, err)
 	}
 	valid := false
 	for _, candidate := range allowed {
@@ -184,16 +189,16 @@ func (c *Client) fetchOnce(ctx context.Context, u *url.URL, accept string, allow
 		}
 	}
 	if !valid {
-		return nil, false, 0, fmt.Errorf("%w: %q", ErrInvalidMIME, mediaType)
+		return nil, fmt.Errorf("%w: %q", ErrInvalidMIME, mediaType)
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, max+1))
 	if err != nil {
-		return nil, false, 0, fmt.Errorf("read response: %w", err)
+		return nil, fmt.Errorf("read response: %w", err)
 	}
 	if int64(len(body)) > max {
-		return nil, false, 0, ErrTooLarge
+		return nil, ErrTooLarge
 	}
-	return body, false, 0, nil
+	return body, nil
 }
 
 func (c *Client) checkRedirect(req *http.Request, via []*http.Request) error {

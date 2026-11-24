@@ -23,10 +23,10 @@ import (
 	"github.com/mosaseka/Discord_ResearchBriefBot/internal/pubmed"
 	"github.com/mosaseka/Discord_ResearchBriefBot/internal/scheduler"
 	"github.com/mosaseka/Discord_ResearchBriefBot/internal/storage"
+	"github.com/mosaseka/Discord_ResearchBriefBot/internal/summarizer"
 )
 
-func main() { os.Exit(run()) }
-func run() int {
+func main() {
 	var mode config.Mode
 	var sourcesPath string
 	flag.BoolVar(&mode.Once, "once", false, "collect and publish once, then exit")
@@ -34,6 +34,10 @@ func run() int {
 	flag.StringVar(&mode.Fixture, "fixture", "", "offline fixture directory; requires --once and forces --dry-run")
 	flag.StringVar(&sourcesPath, "config", "config/sources.yaml", "RSS/Atom sources configuration")
 	flag.Parse()
+	os.Exit(run(mode, sourcesPath, httpclient.New))
+}
+
+func run(mode config.Mode, sourcesPath string, newHTTPClient func(httpclient.Config) (*httpclient.Client, error)) int {
 	cfg, err := config.Load(mode)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "configuration error:", err)
@@ -46,6 +50,7 @@ func run() int {
 	var sources []collector.Source
 	var crossrefClient *crossref.Client
 	var httpClient *httpclient.Client
+	var generator app.Summarizer
 	now := time.Now
 	databasePath := cfg.DatabasePath
 	if cfg.Mode.Fixture != "" {
@@ -63,7 +68,7 @@ func run() int {
 			logger.Error("load sources", "error", loadErr)
 			return 2
 		}
-		httpClient, err = httpclient.New(httpclient.Config{UserAgent: cfg.UserAgent})
+		httpClient, err = newHTTPClient(httpclient.Config{UserAgent: cfg.UserAgent})
 		if err != nil {
 			logger.Error("create HTTP client", "error", err)
 			return 1
@@ -76,6 +81,9 @@ func run() int {
 			}
 		}
 		crossrefClient = &crossref.Client{HTTP: httpClient, Mailto: cfg.CrossrefMailto}
+		if cfg.GeminiEnabled && cfg.GeminiAPIKey != "" {
+			generator = summarizer.NewGemini(httpClient, cfg.GeminiAPIKey)
+		}
 	}
 	store, err := storage.Open(ctx, databasePath)
 	if err != nil {
@@ -87,7 +95,8 @@ func run() int {
 	if !cfg.Mode.DryRun {
 		publisher = discord.New(cfg.DiscordBotToken)
 	}
-	service := &app.Service{Sources: sources, Crossref: crossrefClient, Store: store, Publisher: publisher, ChannelID: cfg.DiscordChannelID, Location: cfg.Location, Logger: logger, Now: now}
+	service := &app.Service{Sources: sources, Crossref: crossrefClient, Store: store, Publisher: publisher,
+		Summarizer: generator, ChannelID: cfg.DiscordChannelID, Location: cfg.Location, Logger: logger, Now: now}
 	runType := "scheduled"
 	if cfg.Mode.Once {
 		runType = "once"

@@ -30,6 +30,8 @@ type Config struct {
 	Location                                       *time.Location
 	BriefCron, DatabasePath, LogLevel              string
 	NCBITool, NCBIEmail, CrossrefMailto, UserAgent string
+	GeminiEnabled                                  bool
+	GeminiAPIKey                                   string
 }
 
 type Feed struct {
@@ -66,6 +68,10 @@ func Load(mode Mode) (Config, error) {
 		Timezone: tz, Location: loc, BriefCron: cron, DatabasePath: env("DATABASE_PATH", DefaultDatabase), LogLevel: level,
 		NCBITool: env("NCBI_TOOL", "discord-research-brief-bot"), NCBIEmail: strings.TrimSpace(os.Getenv("NCBI_EMAIL")),
 		CrossrefMailto: strings.TrimSpace(os.Getenv("CROSSREF_MAILTO")), UserAgent: env("HTTP_USER_AGENT", "DiscordResearchBriefBot/1.0 (+https://github.com/mosaseka/Discord_ResearchBriefBot)")}
+	cfg.GeminiEnabled = mode.Fixture == "" && strings.EqualFold(env("GEMINI_ENABLED", "false"), "true")
+	if cfg.GeminiEnabled {
+		cfg.GeminiAPIKey = strings.TrimSpace(os.Getenv("GEMINI_API_KEY"))
+	}
 	if !mode.DryRun {
 		if cfg.DiscordBotToken == "" || cfg.DiscordChannelID == "" {
 			return Config{}, errors.New("DISCORD_BOT_TOKEN and DISCORD_CHANNEL_ID are required when posting")

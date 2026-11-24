@@ -41,4 +41,7 @@ jobs:
           restore-keys: |
             researchbot-db-
       - name: Collect and post
+        env:
+          GEMINI_ENABLED: ${{ vars.GEMINI_ENABLED }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: go run ./cmd/researchbot --once

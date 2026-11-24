@@ -14,7 +14,7 @@ import (
 
 func TestBuildLimitsUnicodeAndMentions(t *testing.T) {
 	item := ranking.Ranked{Item: article.Item{Title: strings.Repeat("👩🏽‍💻", 200) + " @everyone", URL: "https://example.org/p", SourceType: article.SourceArXiv, PublishedAt: time.Now()}, Contribution: strings.Repeat("é", 800) + " <@123>", Evidence: evidence.Assessment{Reason: "低 — @here"}, UndergraduateMeaning: "test", Breakdown: ranking.Breakdown{Relevance: 10}, Topics: []string{"patient simulation"}}
-	payloads, err := Build("2026-09-04", 30, []ranking.Ranked{item})
+	payloads, err := Build("2026-09-04", 30, []BriefItem{{Ranked: item}})
 	if err != nil {
 		t.Fatal(err)
 	}
